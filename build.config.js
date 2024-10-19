@@ -9,16 +9,16 @@ module.exports = {
     'it', // Italian
     'ja', // Japanese
     'nb', // Norwegian
-    'nl', // Nederlands
-    'pt-br', // Portuguese (Brazil)
-    'pt-pt', // Portuguese (Portugal)
+    'nl', // Dutch
+    'pt', // European Portuguese (Portugal)
+    'pt-br', // Brazilian Portuguese (Brazil)
     'ru', // Russian
-    'uk', // Ukraine
     'tr', // Turkish
+    'uk', // Ukrainian
     'zh-cn', // Simplified Chinese
     'zh-tw' // Traditional Chinese
   ],
   analytics: {
-    trackingId: 'UA-107017110-1'
+    trackingId: 'G-XH4RNS6QM9',
   }
 };

@@ -35,7 +35,7 @@ import {
   GRBL_REALTIME_COMMANDS,
   GRBL_ALARMS,
   GRBL_ERRORS,
-  GRBL_SETTINGS
+  GRBL_SETTINGS,
 } from './constants';
 
 // % commands
@@ -409,6 +409,23 @@ class GrblController {
       this.runner.on('raw', noop);
 
       this.runner.on('status', (res) => {
+        /**
+         * Handle the scenario where a startup message is not received during UART communication.
+         * A status query (?) will be issued in the `queryActivity` function.
+         */
+        if (!this.ready) {
+          this.ready = true;
+
+          // Reset the state
+          this.clearActionValues();
+        }
+        if (!this.initialized) {
+          this.initialized = true;
+
+          // Initialize controller
+          this.initController();
+        }
+
         this.actionMask.queryStatusReport = false;
 
         if (this.actionMask.replyStatusReport) {
@@ -574,12 +591,14 @@ class GrblController {
       this.runner.on('startup', (res) => {
         this.emit('serialport:read', res.raw);
 
-        // The startup message always prints upon startup, after a reset, or at program end.
-        // Setting the initial state when Grbl has completed re-initializing all systems.
-        this.clearActionValues();
+        if (!this.ready) {
+          // The startup message always prints upon startup, after a reset, or at program end.
+          // Setting the initial state when Grbl has completed re-initializing all systems.
+          this.clearActionValues();
 
-        // Set ready flag to true when a startup message has arrived
-        this.ready = true;
+          // Set ready flag to true when a startup message has arrived
+          this.ready = true;
+        }
 
         if (!this.initialized) {
           this.initialized = true;
@@ -592,6 +611,13 @@ class GrblController {
       this.runner.on('others', (res) => {
         this.emit('serialport:read', res.raw);
       });
+
+      // Restrict the function to execute once within the specified time interval, occurring only on the trailing edge of the timeout.
+      const queryActivity = _.throttle(() => {
+        if (this.isOpen()) {
+          this.connection.write('?');
+        }
+      }, 2000, { trailing: true });
 
       const queryStatusReport = () => {
         // Check the ready flag
@@ -701,6 +727,7 @@ class GrblController {
 
         // Check the ready flag
         if (!(this.ready)) {
+          queryActivity();
           return;
         }
 
@@ -1183,7 +1210,7 @@ class GrblController {
           this.workflow.resume();
         },
         'feeder:feed': () => {
-          const [commands, context = {}] = args;
+          const [commands, context] = args;
           this.command('gcode', commands, context);
         },
         'feeder:start': () => {
@@ -1229,6 +1256,10 @@ class GrblController {
           this.feeder.reset();
 
           this.write('\x18'); // ^x
+        },
+        'jogCancel': () => {
+          // https://github.com/gnea/grbl/blob/master/doc/markdown/jogging.md
+          this.write('\x85');
         },
         // Feed Overrides
         // @param {number} value The amount of percentage increase or decrease.
@@ -1411,7 +1442,12 @@ class GrblController {
     }
 
     writeln(data, context) {
-      if (_.includes(GRBL_REALTIME_COMMANDS, data)) {
+      // https://github.com/gnea/grbl/blob/master/doc/markdown/commands.md#grbl-v11-realtime-commands
+      const isASCIIRealtimeCommand = _.includes(GRBL_REALTIME_COMMANDS, data);
+      const isExtendedASCIIRealtimeCommand = String(data).match(/[\x80-\xff]/);
+      const isRealtimeCommand = isASCIIRealtimeCommand || isExtendedASCIIRealtimeCommand;
+
+      if (isRealtimeCommand) {
         this.write(data, context);
       } else {
         this.write(data + '\n', context);
